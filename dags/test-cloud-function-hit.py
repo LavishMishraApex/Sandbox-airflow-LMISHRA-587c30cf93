@@ -14,7 +14,7 @@ def call_cloud_function(message):
     response = requests.get("http://api.open-notify.org/astros.json")
     print(response)
 '''
-CF_URL_testcloudfunction = """https://us-central1-datalake-mgmt-sandbox-3c4ba997.cloudfunctions.net/mfm-sync-tags"""
+CF_URL_testcloudfunction = """https://us-central1-apex-datalake-mgmt-dev-00.cloudfunctions.net/mfm-list-policy-tags"""
 # "def get_id_token(service_url: str):
 #     auth_req = google.auth.transport.requests.Request()
 #     id_token = google.oauth2.id_token.fetch_id_token(auth_req, service_url)
