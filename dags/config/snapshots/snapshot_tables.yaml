@@ -1,0 +1,68 @@
+snapshot_tables:
+  accounts:
+    keys:
+      - "account_id"
+    filters:
+      - column: "correspondent_code"
+        method: "correspondent_code"
+    for_all_clients: "True"
+  positions:
+    keys:
+      - "accountId"
+      - "assetId"
+    filters:
+      - column: "correspondentCode"
+        method: "correspondent_code"
+      - column: "processDate"
+        method: "process_date"
+    for_all_clients: "True"
+  executions:
+    keys:
+      - "Account"
+    filters:
+      - column: "correspondentCode"
+        method: "correspondent_code"
+      - column: "processDate"
+        method: "process_date"
+    for_all_clients: "True"
+  entries:
+    keys:
+      - "accountId"
+    filters:
+      - column: "correspondentCode"
+        method: "correspondent_code"
+      - column: "processDate"
+        method: "process_date"
+    for_all_clients: "True"
+  corporate_actions:
+    keys:
+      - "symbol"
+    filters:
+      - column: "correspondentCode"
+        method: "correspondent_code"
+    for_all_clients: "True"
+  activities:
+    keys:
+      - "accountId"
+    filters:
+      - column: "correspondentCode"
+        method: "correspondent_code"
+      - column: "processDate"
+        method: "process_date"
+    for_all_clients: "True"
+  orders:
+    keys:
+      - "account_number"
+      - "symbol"
+    filters:
+      - column: "correspondent_code"
+        method: "correspondent_code"
+      - column: "process_date"
+        method: "process_date"
+    for_all_clients: "True"
+    client_specific: []
+  assets:
+    keys:
+      - "symbol"
+    filters: []
+    for_all_clients: "False"

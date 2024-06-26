@@ -1,0 +1,33 @@
+gcp_tables:
+  accounts:
+    project_variable: "INTERNAL_HUB"
+    schema: "accounts"
+    name: "active_accounts"
+  positions:
+    project_variable: "INTERNAL_HUB"
+    schema: "ledger"
+    name: "active_positions"
+  executions:
+    project_variable: "INTERNAL_HUB"
+    schema: "orders"
+    name: "active_executions"
+  entries:
+    project_variable: "INTERNAL_HUB"
+    schema: "ledger"
+    name: "active_entries"
+  corporate_actions:
+    project_variable: "INTERNAL_HUB"
+    schema: "corp_actions"
+    name: "active_corporate_actions"
+  activities:
+    project_variable: "INTERNAL_HUB"
+    schema: "ledger"
+    name: "active_activities"
+  orders:
+    project_variable: "INTERNAL_HUB"
+    schema: "orders"
+    name: "active_orders"
+  assets:
+    project_variable: "INTERNAL_HUB"
+    schema: "assets"
+    name: "active_assets"

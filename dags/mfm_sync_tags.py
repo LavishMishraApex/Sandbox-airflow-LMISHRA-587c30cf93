@@ -1,5 +1,5 @@
-from ascend.datalake.pkg.utility import get_id_token
-from ascend.datalake.pkg.utility import get_impersonated_creds
+from  pkg.utility import get_id_token
+from  pkg.utility import get_impersonated_creds
 from airflow import DAG
 from airflow.models import Variable
 from airflow.operators.http_operator import SimpleHttpOperator
@@ -8,7 +8,7 @@ from airflow.operators.dummy_operator import DummyOperator
 from airflow.utils.dates import days_ago
 from airflow.utils.trigger_rule import TriggerRule
 from google.cloud import bigquery
-from ascend.datalake.config.globals import AIRFLOW_SA
+from  config.globals import AIRFLOW_SA
 import json
 import google.auth.transport.requests
 import google.oauth2.id_token
