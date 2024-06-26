@@ -16,7 +16,7 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
-from airflow.providers.slack.notifications.slack import send_slack_notification
+#from airflow.providers.slack.notifications.slack import send_slack_notification
 
 #from pkg.utility import get_impersonated_creds  
 
@@ -61,7 +61,7 @@ def check_early_start(**kwargs):
     
     process_date = get_process_date(**kwargs)
     logging.info(f"process_date: {process_date}")
-
+'''
 def failure_notification():
     env = Variable.get("environment")
     channel = "datalake-health-check-alerts-dev" #channel = "datalake-collaboration" if env == "prd" else f"datalake-health-check-alerts-{env}"
@@ -75,7 +75,7 @@ def failure_notification():
         channel=slack_channel,
     )
     
-
+'''
 def create_dag(dag_id, schedule):
 
     dag = DAG(
@@ -88,7 +88,7 @@ def create_dag(dag_id, schedule):
         default_args={
         "owner": "datalake",
         "retries": 3, 
-        "on_failure_callback": failure_notification(),
+        #"on_failure_callback": failure_notification(),
         },
     )
 
