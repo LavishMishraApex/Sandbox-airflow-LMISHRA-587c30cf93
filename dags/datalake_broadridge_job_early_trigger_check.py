@@ -1,5 +1,3 @@
-# 2024-06-24 lmishra initial deployment
-
 import datetime
 import json
 import logging
@@ -19,15 +17,19 @@ from airflow.operators.python import PythonOperator
 #from airflow.providers.slack.notifications.slack import send_slack_notification
 
 #from pkg.utility import get_impersonated_creds  
-
 job_configurations = {   
     "fbb_bqraw_rf" :    {
-        
+        "project" : "apex-datalake-mgmt-env-00",
+        "dataset" : "general",
+        "table" : "processes_status_log",
         "task_id": "000 Refresh Channel - fbb_bqraw_rf",
         "process_name": "Tidal",
         "status": "Started" 
     },
     "fbi_bqraw_rf" :    {
+        "project" : "apex-datalake-mgmt-env-00",
+        "dataset" : "general",
+        "table" : "processes_status_log",
         "task_id": "000 Refresh Channel - fbi_bqraw_rf",
         "process_name": "Tidal",
         "status": "Started" 
@@ -53,7 +55,25 @@ def get_process_date(**kwargs) -> str:
     
 
 
+def construct_query(job_name: str, process_date: str) -> str:
+    environment = Variable.get("environment")
+    project = job_configurations[job_name]["project"].replace("env", environment)
+    dataset = job_configurations[job_name]["dataset"]
+    table = job_configurations[job_name]["table"]
+    
+    task_id = job_configurations[job_name]['task_id']
+    status = job_configurations[job_name]['status']
 
+
+    query = f"""
+    SELECT * FROM `{project}.{dataset}.{table}` 
+    WHERE 
+        task_id = '{task_id}' AND
+        status = '{status}' AND
+        process_date = '{process_date}'
+    """
+    logging.info(f"query is {query}")
+    return query
 # main function to check if the replication has started
 def check_early_start(**kwargs):
     job_name = kwargs['job_name']
@@ -61,21 +81,27 @@ def check_early_start(**kwargs):
     
     process_date = get_process_date(**kwargs)
     logging.info(f"process_date: {process_date}")
-'''
+    
+
+    query = construct_query(job_name, process_date)
+
 def failure_notification():
     env = Variable.get("environment")
+
     channel = "datalake-health-check-alerts-dev" #channel = "datalake-collaboration" if env == "prd" else f"datalake-health-check-alerts-{env}"
     slack_connection_id = "slack_notifier"
     slack_channel = channel
     msg = f":red_circle: Broadridge jobs have started early.Please check on the jobs 'fbi_bqraw_rf' and 'fbb_bqraw_rf' <!subteam^S04PA2MNXSB> "
-
+    logging.info(f"message is {msg} on channel {channel}")
+    '''
     return send_slack_notification(
         slack_conn_id=slack_connection_id,
         text=msg,
         channel=slack_channel,
     )
+    '''
     
-'''
+
 def create_dag(dag_id, schedule):
 
     dag = DAG(
@@ -88,7 +114,7 @@ def create_dag(dag_id, schedule):
         default_args={
         "owner": "datalake",
         "retries": 3, 
-        #"on_failure_callback": failure_notification(),
+        "on_failure_callback": failure_notification(),
         },
     )
 
