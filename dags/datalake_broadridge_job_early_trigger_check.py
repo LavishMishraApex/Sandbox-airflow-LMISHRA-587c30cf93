@@ -98,7 +98,11 @@ def create_dag(dag_id, schedule):
                 task_id="Start",
                 dag=dag,
             )
-
+            # empty operator to end the dag
+            end = EmptyOperator(
+                task_id="End",
+                dag=dag,
+            )
             for job_name in list(job_configurations.keys()):
                 early_start_check = PythonOperator(
                 task_id=f"early_start_check_{job_name}",
@@ -107,14 +111,11 @@ def create_dag(dag_id, schedule):
                 dag=dag,
                 provide_context=True,
                 )
+                start >> early_start_check >> end
 
-            # empty operator to end the dag
-            end = EmptyOperator(
-                task_id="End",
-                dag=dag,
-            )
+           
 
-            start >> early_start_check >> end
+            
 
     return dag
 
