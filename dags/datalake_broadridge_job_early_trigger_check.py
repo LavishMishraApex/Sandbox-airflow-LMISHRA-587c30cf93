@@ -14,9 +14,12 @@ from airflow.decorators import dag, task
 from airflow.models import Variable
 from airflow.operators.empty import EmptyOperator
 from airflow.operators.python import PythonOperator
-#from airflow.providers.slack.notifications.slack import send_slack_notification
+from airflow.providers.slack.notifications.slack import send_slack_notification
 
-#from pkg.utility import get_impersonated_creds  
+from pkg.utility import get_impersonated_creds  
+'''
+Job configurations which would be tested for delays
+'''
 job_configurations = {   
     "fbb_bqraw_rf" :    {
         "project" : "apex-datalake-mgmt-env-00",
@@ -35,9 +38,12 @@ job_configurations = {
         "status": "Started" 
     }
 }
-# get process date from dag_run.conf or use yesterday
+
 def get_process_date(**kwargs) -> str:
-        
+    '''
+    This function takes in dag_configurations as arguments, returns the process_date as found in config, if no process_date is found, it returns the yesterday's date
+    Returns date(str) in the format YYYY-MM-DD
+    '''        
     process_date = kwargs.get("dag_run").conf.get("process_date")
     if process_date:
         assert isinstance(process_date, str)
@@ -56,6 +62,13 @@ def get_process_date(**kwargs) -> str:
 
 
 def construct_query(job_name: str, process_date: str) -> str:
+    '''
+    arguments: 
+        job_name(str) :- job name for which the query is to be constructed 
+        process_date(str) :- date as returned by function get_process_date()
+    This function constructs the query to be executed on the table to check if the migration has started has started for a particular job at a particular process date
+    Return query(str)
+    '''
     environment = Variable.get("environment")
     project = job_configurations[job_name]["project"].replace("env", environment)
     dataset = job_configurations[job_name]["dataset"]
@@ -74,8 +87,11 @@ def construct_query(job_name: str, process_date: str) -> str:
     """
     logging.info(f"query is {query}")
     return query
-# main function to check if the replication has started
 def check_early_start(**kwargs):
+    '''
+    This function takes in job_name as argument, fetches process_date and checks if the job has started early, if yes, sends a slack notification
+
+    '''
     job_name = kwargs['job_name']
     logging.info(f"job name received is {job_name}")
     
@@ -93,13 +109,13 @@ def failure_notification():
     slack_channel = channel
     msg = f":red_circle: Broadridge jobs have started early.Please check on the jobs 'fbi_bqraw_rf' and 'fbb_bqraw_rf' <!subteam^S04PA2MNXSB> "
     logging.info(f"message is {msg} on channel {channel}")
-    '''
+    
     return send_slack_notification(
         slack_conn_id=slack_connection_id,
         text=msg,
         channel=slack_channel,
     )
-    '''
+    
     
 
 def create_dag(dag_id, schedule):
