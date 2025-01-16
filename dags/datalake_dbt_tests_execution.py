@@ -1,12 +1,18 @@
 import json
 from airflow.hooks.base import BaseHook
-import requests
-from requests_toolbelt.adapters.socket_options import TCPKeepAliveAdapter
-import logging
 from airflow.operators.python import get_current_context
+
 # from ascend.datalake.config.globals import CLOUDRUN_URL, ENVIRONMENT
 from airflow.exceptions import AirflowException
 from pkg.utility import get_id_token
+from requests_toolbelt.adapters.socket_options import TCPKeepAliveAdapter
+
+import datetime
+import requests
+import logging
+
+from airflow import DAG
+from airflow.operators.python import PythonOperator
 
 
 CLOUDRUN_URL = "https://dbt-apex-datalake-h3n6ulr52q-uc.a.run.app"
@@ -69,3 +75,37 @@ def execute_tests(job_name: str):
     logging.info(precheck_validation_names_array)
     for test_name in precheck_validation_names_array:
         run_dbt_test(test_name, parameters)
+
+
+def create_dag(dag_id, schedule):
+
+    dag = DAG(
+        dag_id=dag_id,
+        schedule_interval=schedule,
+        start_date=datetime.datetime(
+            2024, 6, 24, tzinfo=pytz.timezone('US/Central')),
+        max_active_runs=1,
+        catchup=False,
+        tags=["team:datalake"],
+        default_args={
+            "owner": "datalake",
+            "retries": 3,
+        },
+    )
+
+    with dag:
+        # dummy operator to start the dag
+
+        datalake_dbt_test = PythonOperator(
+            task_id="datalake_dbt_test",
+            python_callable=execute_tests,
+            op_kwargs={'job_name': parameters["SNAPSHOT_NAME"]},
+            dag=dag,
+            provide_context=True,
+        )
+
+        return dag
+
+
+dag_id = "datalake_dbt_tests_execution"
+schedule = None  # needs to be changed to 2 am CST
