@@ -15,6 +15,8 @@ import logging
 import pytz
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from datetime import date, timedelta
+
 
 # need to fetch Datalake MGMT project and internal_hub health project
 
@@ -22,11 +24,26 @@ CLOUDRUN_URL = "https://dbt-apex-datalake-h3n6ulr52q-uc.a.run.app"
 ENVIRONMENT = "dev"
 
 
+def find_past_date(current_date: str, number_of_days_to_subtract: int):
+    """
+    This function takes in current_date in str format, the number of days as input and returns the date in the format YYYY-MM-DD by subtracting the date with number_of_days_to_update
+    Parameters:-
+        current_date: str format date, e.g. '2025-01-19'
+        number_of_days_to_subtract: int, number of days to subtract from the current_date
+    Returns:-
+        Date in the format YYYY-MM-DD, e.g. '2025-01-18' after subtracting number_of_days_to_subtract days from '2025-01-19'
+    """
+    current_date = date.fromisoformat(current_date)
+    yesterday_date = current_date - timedelta(days=number_of_days_to_subtract)
+    yesterday_date = yesterday_date.strftime('%Y-%m-%d')
+    return yesterday_date
+
+
 def fetch_list_of_tests_for_job(job_name: str):
     '''
         Description:-
             Takes job_name as input and fetches the list of dbt tests associated with the job_name w.r.t the tables its dependent on
-        params 
+        params
             job_name: job_name for which the tests need to be fetched, example: 'latest_assets'
         returns:-
             list of rows where each row has a single table_name and multiple test_names associated with it(in form of an array)
@@ -55,8 +72,8 @@ def create_sql_for_dhp_parameters(parameters):
         sql: sql query to fetch the results from DHP
     '''
 
-    sql = """   SELECT * FROM 
-                `apex-internal-hub-dev-00.datalake_status.internal_hub_health`  
+    sql = """   SELECT * FROM
+                `apex-internal-hub-dev-00.datalake_status.internal_hub_health`
     """
     and_where_flag = False
     for key, value in parameters.items():
@@ -65,6 +82,7 @@ def create_sql_for_dhp_parameters(parameters):
             and_where_flag = True
         else:
             sql += f""" AND {key} = "{value}"\n"""
+    sql += " ORDER BY report_timestamp DESC"
     return sql
 
 
@@ -75,7 +93,82 @@ def validate_dhp_test(parameters):
     logging.info(
         "results fetched from DHP for parameters {}".format(parameters))
     logging.info(dhp_test_result)
-    return check_results(dhp_test_result)
+    test_succeeded, message = check_results(dhp_test_result)
+    return test_succeeded, message, dhp_test_result
+
+
+def fetch_data_from_test_description(test_description):
+    test_description = test_description.replace("'", "\"")
+    test_description_current_json = json.loads(
+        test_description)
+    return test_description_current_json["max_id"], test_description_current_json["column_name"]
+
+
+def validate_row_count(dhp_test_result, job_name, process_date, parameters):
+
+    if job_name == "latest_prices":
+
+        test_description_current_string = dhp_test_result[0]["test_description"]
+        logging.info("parsing test_description for job_name {}, process_date {}, test_name {} from the value {}".format(
+            job_name, process_date, parameters["test_name"], test_description_current_string))
+        try:
+            max_id_current, column_to_check = fetch_data_from_test_description(
+                test_description_current_string)
+        except Exception as e:
+            return False, f"test_description not parsable found for job_name {job_name}, process_date {process_date}, table_name {parameters['table_name']}, test_name {parameters['test_name']}, test_description is {test_description_current_string} error is {str(e)}"
+        yesterday_date = find_past_date(process_date, 1)
+        parameters["process_date"] = yesterday_date
+        test_succeeded, message, dhp_test_result_yesterday = validate_dhp_test(
+            parameters)
+        if test_succeeded:
+            logging.info("for process_date of {} update of max_id_test_name {} test_succeeded is {}, message is {}, dhp_test_result is {},".format(
+                yesterday_date, parameters["test_name"], test_succeeded, message, dhp_test_result_yesterday))
+            test_description_yesterday_string = dhp_test_result_yesterday[0]["test_description"]
+            logging.info("parsing test_description for job_name {}, process_date {}, test_name {} from the value {}".format(
+                job_name, yesterday_date, parameters["test_name"], test_description_yesterday_string))
+            try:
+                max_id_yesterday, _ = fetch_data_from_test_description(
+                    test_description_yesterday_string)
+            except Exception as e:
+                return False, f"test_description not parsable found for job_name {job_name}, yesterday's process_date {yesterday_date}, table_name {parameters['table_name']}, test_name {parameters['test_name']}, test_description is {test_description_yesterday_string} error is {str(e)}"
+
+            difference_in_rows = int(max_id_current) - int(max_id_yesterday)
+            logging.info("max_id_current is {}, max_id_yesterday is {}, difference_in_rows is {}".format(
+                max_id_current, max_id_yesterday, difference_in_rows))
+            # query_to_fetch_rows_from_table_function = f"""
+            # SELECT COUNT(*) as row_count FROM `{table_function}`({max_id_current})
+            # """
+            # results = run_query(query_to_fetch_rows_from_table_function)
+            # logging.info("results from table function are {}".format(results))
+
+            # need to call table function and fetch values from there
+            table_function_query = f"""
+            SELECT count(*) as row_count FROM (
+                WITH deduped_raw_asset_prices AS (
+                    SELECT
+                    *,
+                    ROW_NUMBER() OVER (PARTITION BY id ORDER BY _ingested_at DESC) AS latest_record
+                    FROM `apex-assets-{ENVIRONMENT}-00`.`feeder`.`apexinternal_assets_v1_price_apexinternal_assets_v1_price`
+                    where id > {max_id_yesterday} and id <= {max_id_current}
+                    QUALIFY latest_record = 1
+                )
+
+                SELECT * EXCEPT (latest_record) from deduped_raw_asset_prices order by id desc
+            )
+            """
+            row_count = run_query(table_function_query)[0]["row_count"]
+            logging.info("row_count is {}".format(row_count))
+            if row_count["row_count"] != difference_in_rows:
+
+                return False, f'Row count mismatch for job_name {job_name}, process_date {process_date}, table_name {parameters["table_name"]}, test_name {parameters["test_name"]}, max_id for column_name {column_to_check} for today is {max_id_current}, for yesterday is {max_id_yesterday} difference_in_rows is {difference_in_rows}, value returned from table function is {row_count}'
+            return True, "Row count validation successful"
+        else:
+            return False, f'Test is not healthy for job_name {job_name}, yesterday date {process_date}, table_name {parameters["table_name"]}, test_name {parameters["test_name"]}'
+
+    else:
+        logging.info(
+            "job_name is not latest_prices, it is  {}".format(job_name))
+        return True, "Row count validation not attempted as job is not latest_prices"
 
 
 def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
@@ -108,18 +201,24 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
         results_for_table = {}
         for test_name in dhp_test_names_array:
             parameters["test_name"] = test_name
-            test_succeeded, message = validate_dhp_test(parameters)
+            test_succeeded, message, dhp_test_result = validate_dhp_test(
+                parameters)
             all_tests_succeeded = all_tests_succeeded and test_succeeded
             results_for_table[test_name] = {
                 "test_succeeded": test_succeeded, "message": message}
-            if test_name == max_id_test_name:
-                pass  # need to update this to fetch and store max_id details for today's process_date and yesterday's process_date
+            if test_name == max_id_test_name and test_succeeded:
+                row_count_test_succeeded, row_count_message = validate_row_count(dhp_test_result, job_name,
+                                                                                 process_date, parameters)
+
         results_for_job[table_name] = results_for_table
     logging.info("results_for_job are {}".format(results_for_job))
     logging.info("all_tests_succeeded is {}".format(all_tests_succeeded))
     if not all_tests_succeeded:
         raise AirflowException(
             "One or more tests failed for job_name {}".format(job_name))
+    if not row_count_test_succeeded:
+        raise AirflowException(
+            f"All tests for today were found healthy but row count validation failed on following error {row_count_message}")
 
 
 def check_results(results):
@@ -188,7 +287,7 @@ def create_dag(dag_id, schedule):
                 task_id="datalake_dhp_test_{}".format(job_name),
                 python_callable=check_dhp_status,
                 op_kwargs={"job_name": job_name,
-                           "process_date": "2025-02-04"
+                           "process_date": "2025-02-07"
                            },
                 dag=dag,
                 provide_context=True,
