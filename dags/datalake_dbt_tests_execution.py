@@ -98,7 +98,7 @@ def execute_tests(job_name: str):
     logging.info("list of tests fetched for job_name {} is".format(job_name))
     logging.info(precheck_validation_names_array)
     for record in precheck_validation_names_array:
-         parameters = {}
+        parameters = {}
         if "PROCESS_DATE" in record["variables"]:
             parameters["PROCESS_DATE"] = process_date
         if "JOB_NAME" in record["variables"]:

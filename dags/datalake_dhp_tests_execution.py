@@ -101,7 +101,7 @@ def fetch_data_from_test_description(test_description):
     test_description = test_description.replace("'", "\"")
     test_description_current_json = json.loads(
         test_description)
-    return test_description_current_json["max_id"], test_description_current_json["column_name"]
+    return test_description_current_json["max_id"], test_description_current_json["column_name"], test_description_current_json["row_count"]
 
 
 def validate_row_count(dhp_test_result, job_name, process_date, parameters):
@@ -112,7 +112,7 @@ def validate_row_count(dhp_test_result, job_name, process_date, parameters):
         logging.info("parsing test_description for job_name {}, process_date {}, test_name {} from the value {}".format(
             job_name, process_date, parameters["test_name"], test_description_current_string))
         try:
-            max_id_current, column_to_check = fetch_data_from_test_description(
+            max_id_current, column_to_check, row_count_current = fetch_data_from_test_description(
                 test_description_current_string)
         except Exception as e:
             return False, f"test_description not parsable found for job_name {job_name}, process_date {process_date}, table_name {parameters['table_name']}, test_name {parameters['test_name']}, test_description is {test_description_current_string} error is {str(e)}"
@@ -127,13 +127,13 @@ def validate_row_count(dhp_test_result, job_name, process_date, parameters):
             logging.info("parsing test_description for job_name {}, process_date {}, test_name {} from the value {}".format(
                 job_name, yesterday_date, parameters["test_name"], test_description_yesterday_string))
             try:
-                max_id_yesterday, _ = fetch_data_from_test_description(
+                max_id_yesterday, _, _ = fetch_data_from_test_description(
                     test_description_yesterday_string)
             except Exception as e:
                 return False, f"test_description not parsable found for job_name {job_name}, yesterday's process_date {yesterday_date}, table_name {parameters['table_name']}, test_name {parameters['test_name']}, test_description is {test_description_yesterday_string} error is {str(e)}"
 
-            difference_in_rows = int(max_id_current) - int(max_id_yesterday)
-            logging.info("max_id_current is {}, max_id_yesterday is {}, difference_in_rows is {}".format(
+            difference_in_rows = int(row_count_current)
+            logging.info("max_id_current is {}, max_id_yesterday is {}, difference_in_rows with row_count fetched is {}".format(
                 max_id_current, max_id_yesterday, difference_in_rows))
             # query_to_fetch_rows_from_table_function = f"""
             # SELECT COUNT(*) as row_count FROM `{table_function}`({max_id_current})
@@ -144,21 +144,16 @@ def validate_row_count(dhp_test_result, job_name, process_date, parameters):
             # need to call table function and fetch values from there
             table_function_query = f"""
             SELECT count(*) as row_count FROM (
-                WITH deduped_raw_asset_prices AS (
-                    SELECT
-                    *,
-                    ROW_NUMBER() OVER (PARTITION BY id ORDER BY _ingested_at DESC) AS latest_record
-                    FROM `apex-assets-{ENVIRONMENT}-00`.`feeder`.`apexinternal_assets_v1_price_apexinternal_assets_v1_price`
-                    where id > {max_id_yesterday} and id <= {max_id_current}
-                    QUALIFY latest_record = 1
+                SELECT * FROM `apex-internal-hub-{ENVIRONMENT}-00.assets.latest_prices_by_asset_id`({max_id_current}, {max_id_yesterday})
                 )
-
-                SELECT * EXCEPT (latest_record) from deduped_raw_asset_prices order by id desc
-            )
             """
-            row_count = run_query(table_function_query)[0]["row_count"]
+            logging.info(table_function_query)
+            table_function_results = run_query(table_function_query)
+            table_function_results = list(table_function_results)
+            logging.info("table_function_results is", table_function_results)
+            row_count = table_function_results[0]["row_count"]
             logging.info("row_count is {}".format(row_count))
-            if row_count["row_count"] != difference_in_rows:
+            if row_count != difference_in_rows:
 
                 return False, f'Row count mismatch for job_name {job_name}, process_date {process_date}, table_name {parameters["table_name"]}, test_name {parameters["test_name"]}, max_id for column_name {column_to_check} for today is {max_id_current}, for yesterday is {max_id_yesterday} difference_in_rows is {difference_in_rows}, value returned from table function is {row_count}'
             return True, "Row count validation successful"
@@ -287,7 +282,7 @@ def create_dag(dag_id, schedule):
                 task_id="datalake_dhp_test_{}".format(job_name),
                 python_callable=check_dhp_status,
                 op_kwargs={"job_name": job_name,
-                           "process_date": "2025-02-07"
+                           "process_date": "2025-07-21"
                            },
                 dag=dag,
                 provide_context=True,
