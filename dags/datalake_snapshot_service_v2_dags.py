@@ -13,6 +13,7 @@ from airflow.providers.http.sensors.http import HttpSensor
 from datetime import datetime
 from google.cloud import bigquery
 
+from dags.pkg.utility.table_function_functionalities import *  # needs path changed
 
 logging.getLogger().setLevel(logging.INFO)
 sys.tracebacklimit = 0  # Remove traceback from logs for more readable error messages
@@ -81,10 +82,25 @@ def build_request_params(snapshot_name: str) -> dict:
 
     request_params = {"snapshot": snapshot_name}
     request_params.update(parameters)
+    is_table_function, table_function_name = fetch_table_function_for_snapshot(
+        snapshot_name)
+    logging.info(
+        f"for snapshot {snapshot_name} with is_table_function={is_table_function} and table_function_name is {table_function_name} ")
+    if is_table_function:
+        table_function_arguments = fetch_list_of_arguments_of_a_table_function(
+            table_function_name)
+        logging.info(
+            f"Table function arguments for {table_function_name} are {table_function_arguments}")
 
+    else:
+        logging.info(
+            "Source of this Snapshot is not a table Function. Proceeding with Standard Snapshot Run")
+    logging.info(
+        f"Request parameters built: {json.dumps(request_params, indent=2)}")
     return request_params
 
 
+'''
 @task(multiple_outputs=True)
 def run_snapshot_service_v2(request_params: dict):
     context = get_current_context()
@@ -145,6 +161,8 @@ def get_snapshot_result():
         logging.error(f"Snapshot failed:\n{json.dumps(err, indent=2)}")
         raise AirflowFailException("Snapshot failed.")
 
+'''
+
 
 def create_snapshot_dag(dag_id: str, snapshot_name: str, parameters: dict) -> DAG:
     default_args = {
@@ -170,11 +188,12 @@ def create_snapshot_dag(dag_id: str, snapshot_name: str, parameters: dict) -> DA
 
     with dag:
         params = build_request_params(snapshot_name)
+        '''
         run_snapshot = run_snapshot_service_v2(params)
         snapshot_state_check = check_snapshot_is_done(run_snapshot)
         snapshot_result = get_snapshot_result()
-
-        params >> run_snapshot >> snapshot_state_check >> snapshot_result
+        '''
+        # params >> run_snapshot >> snapshot_state_check >> snapshot_result
 
     return dag
 
