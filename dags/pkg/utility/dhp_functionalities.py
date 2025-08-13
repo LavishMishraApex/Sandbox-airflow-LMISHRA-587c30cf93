@@ -5,9 +5,7 @@ from airflow.exceptions import AirflowFailException
 from dags.pkg.utility.bigquery_functionalities import *  # needs path changed
 
 
-from dags.config.globals import DHP_INTERNAL_HUB_HEALTH  # needs path changed
 from datetime import date, timedelta
-from dags.config.globals import GCP_PROJECTS, ENVIRONMENT  # needs path changed
 
 
 def fetch_data_from_test_description(test_description):
@@ -158,3 +156,139 @@ def find_table_function_parameters(job_name: str, process_date) -> dict:
     table_function_parameters["max_id_column"] = column_to_check
     table_function_parameters["min_id"] = max_id_yesterday
     return table_function_parameters
+
+
+'''
+functions related to DHP fetch for generalized table functions call
+'''
+
+# Needs to be fetched from globals
+ACTIVE_SNAPSHOT_JOBS_TABLE = "apex-internal-hub-dev-00.common.active_snapshot_jobs"
+
+# Needs to be fetched from globals
+DHP_INTERNAL_HUB_HEALTH = "apex-internal-hub-dev-00.datalake_status.internal_hub_health"
+
+# Needs to be fetched from globals
+DHP_PRE_SNAPSHOT_CONFIGURATION = "apex-datalake-mgmt-dev-00.snapshot_service.pre_snapshot_dhp_configuration"
+
+
+def check_if_entry_for_internal_hub_view_exists(snapshot_job_name: str, process_date: str) -> list[bool, str]:
+    """
+    Checks if an entry for the internal hub view exists for the given snapshot name.
+    :param snapshot_job_name: Name of the snapshot.
+    :return: True, test_description if entry exists, else False, empty string.''
+    """
+
+    test_name_to_use_in_dhp = "Snapshot_source_validation"
+    query_to_fetch_details_from_snapshot_jobs = """
+        SELECT source_table.project_var as project_var, source_table.schema_name as schema_name, source_table.table_name as table_name
+        FROM {ACTIVE_SNAPSHOT_JOBS_TABLE}
+        WHERE job_name = '{snapshot_job_name}'
+    """.format(ACTIVE_SNAPSHOT_JOBS_TABLE=ACTIVE_SNAPSHOT_JOBS_TABLE, snapshot_job_name=snapshot_job_name)
+    logging.info(
+        f"Running query to fetch details from active_snapshot_jobs for snapshot: {snapshot_job_name}, query: {query_to_fetch_details_from_snapshot_jobs}")
+    result = list(run_query(query_to_fetch_details_from_snapshot_jobs))
+    project_name, dataset_name, table_name = result[0][
+        'project_var'], result[0]['schema_name'], snapshot_job_name
+
+    logging.info(
+        f"Source view name fetched from active_snapshot_jobs: {project_name}, {dataset_name}, {table_name}")
+
+    query = f"""
+        SELECT *
+        FROM `{DHP_INTERNAL_HUB_HEALTH}`
+        WHERE project_name = '{project_name}'
+        AND dataset_name = '{dataset_name}'
+        AND table_name = '{table_name}'
+        AND process_date = '{process_date}'
+        AND test_name = '{test_name_to_use_in_dhp}'
+    """.format(
+        project_name=project_name, dataset_name=dataset_name, table_name=table_name, process_date=process_date)
+    logging.info(
+        f"Running query to check if entry exists for snapshot: {snapshot_job_name}, query: {query}")
+    result = list(run_query(query))
+    logging.info(
+        f"Result of query to check if entry exists for snapshot: {snapshot_job_name}, len(result): {len(result)}")
+    if len(result) == 0:
+        return False, ''
+    else:
+        return True, result[0]['test_description']
+
+
+def check_if_entry_for_row_count_validation_exists(snapshot_job_name: str, process_date: str) -> list[bool, str]:
+    """
+    Checks if an entry for the internal hub view exists for the given snapshot name.
+    :param snapshot_job_name: Name of the snapshot.
+    :param process_date: Process date for which the entry is to be checked.
+    :return: True, test_description if entry exists, else False, empty string.''
+    """
+
+    test_name_to_use_in_dhp = "ODS_replication_validation"
+    query_to_fetch_details_from_dhp_configurations = """
+        SELECT table_name
+        FROM {DHP_PRE_SNAPSHOT_CONFIGURATION}
+        WHERE job_name = '{snapshot_job_name}'
+    """.format(DHP_PRE_SNAPSHOT_CONFIGURATION=DHP_PRE_SNAPSHOT_CONFIGURATION, snapshot_job_name=snapshot_job_name)
+    logging.info(
+        f"Running query to fetch details from DHP_PRE_SNAPSHOT_CONFIGURATION for snapshot: {snapshot_job_name}, query: {query_to_fetch_details_from_dhp_configurations}")
+    # need to add logic to fail the dag if we get more than one rows as part of the result
+    result = list(run_query(query_to_fetch_details_from_dhp_configurations))
+    project_name, dataset_name, table_name = result[0][
+        'table_name'].split(".")
+
+    logging.info(
+        f"Source view name fetched from DHP_PRE_SNAPSHOT_CONFIGURATION: {project_name}, {dataset_name}, {table_name}")
+
+    query = f"""
+        SELECT *
+        FROM `{DHP_INTERNAL_HUB_HEALTH}`
+        WHERE project_name = '{project_name}'
+        AND dataset_name = '{dataset_name}'
+        AND table_name = '{table_name}'
+        AND process_date = '{process_date}'
+        AND test_name = '{test_name_to_use_in_dhp}'
+    """.format(
+        project_name=project_name, dataset_name=dataset_name, table_name=table_name, process_date=process_date)
+    logging.info(
+        f"Running query to check if entry exists for snapshot: {snapshot_job_name}, query: {query}")
+    result = list(run_query(query))
+    logging.info(
+        f"Result of query to check if entry exists for snapshot: {snapshot_job_name}, len(result): {len(result)}")
+    if len(result) == 0:
+        return False, ''
+    else:
+        return True, result[0]['test_description']
+
+
+def fetch_table_function_parameters_for_snapshot(snapshot_job_name: str, process_date: str, table_function_arguments: list) -> [bool, str, dict]:
+    """
+    Fetches the parameters for a snapshot job from DHP based on the snapshot name and process date.
+    :param snapshot_job_name: Name of the snapshot.
+    :param process_date: Process date for which the parameters are to be fetched.
+    :return: Dictionary containing the parameters if found, else an empty dictionary.
+    """
+    return_message = "Table Function arguments found for IHV message"
+    internal_hub_entry_exists, test_description = check_if_entry_for_internal_hub_view_exists(
+        snapshot_job_name, process_date)
+
+    if not internal_hub_entry_exists:
+        logging.warning(
+            f"No internal hub entry found for snapshot {snapshot_job_name} with process_date {process_date}")
+        entry_for_row_count_validation_exists, test_description = check_if_entry_for_row_count_validation_exists(
+            snapshot_job_name, process_date)
+        return_message = "table_function_parameters found from row count validation test details"
+        if not entry_for_row_count_validation_exists:
+            return False, "No entry found for the snapshot job in DHP", {}
+    test_description = test_description.replace("'", "\"")
+    test_description_json = json.loads(
+        test_description)
+    list_of_arguments_not_found_in_dhp = []
+    asset_params = {}
+    for argument in table_function_arguments:
+        if argument not in test_description_json:
+            list_of_arguments_not_found_in_dhp.append(argument)
+        else:
+            asset_params[argument] = f"{ test_description_json[argument] }"
+    if list_of_arguments_not_found_in_dhp:
+        return False, f"Arguments {list_of_arguments_not_found_in_dhp} not found in DHP for snapshot {snapshot_job_name} with process_date {process_date}", {}
+    return True, return_message, asset_params
