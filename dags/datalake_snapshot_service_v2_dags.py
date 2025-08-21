@@ -15,6 +15,7 @@ from google.cloud import bigquery
 
 from dags.pkg.utility.table_function_functionalities import *  # needs path changed
 from dags.pkg.utility.dhp_functionalities import *  # needs path changed
+from dags.pkg.tasks.windowing_operations import *
 
 logging.getLogger().setLevel(logging.INFO)
 sys.tracebacklimit = 0  # Remove traceback from logs for more readable error messages
@@ -81,26 +82,13 @@ def build_request_params(snapshot_name: str) -> dict:
     if "tests" not in parameters.keys() and snapshot_name in SNAPSHOTS.keys() and SNAPSHOTS[snapshot_name].get("DBT_TESTS"):
         parameters["tests"] = DEFAULT_TESTS
 
-    is_table_function, table_function_name = fetch_table_function_for_snapshot(
-        snapshot_name)
-    logging.info(
-        f"for snapshot {snapshot_name} with is_table_function={is_table_function} and table_function_name is {table_function_name} ")
-    if is_table_function:
-        table_function_arguments = fetch_list_of_arguments_of_a_table_function(
-            table_function_name)
-        logging.info(
-            f"Table function arguments for {table_function_name} are {table_function_arguments}")
-        table_function_parameters_exists_in_dhp, return_message, source_asset_params = fetch_table_function_parameters_for_snapshot(
-            snapshot_name, parameters["process_date"][0], table_function_arguments)  # need to add in the documentations that with windowing, we can only support one process_date and that would be the first one supplied within process_date list
-        logging.info(
-            f"table function parameters exists for snapshot {snapshot_name} with process_date {parameters['process_date'][0]}: {table_function_parameters_exists_in_dhp}, return_message: {return_message} are {source_asset_params}")
-        if table_function_parameters_exists_in_dhp:
-            parameters["data_window"] = source_asset_params
-    else:
-        logging.info(
-            "Source of this Snapshot is not a table Function. Proceeding with Standard Snapshot Run")
-    request_params = {"snapshot": snapshot_name}
+    process_date = parameters["process_date"][0]
+    windowing_required, windowing_params = fetch_windowing_parameters_for_snapshot_generation(
+        snapshot_name, process_date)
+    if windowing_required:
+        parameters["data_window"] = windowing_params
 
+    request_params = {"snapshot": snapshot_name}
     request_params.update(parameters)
     logging.info(
         f"Request parameters built: {json.dumps(request_params, indent=2)}")
@@ -192,12 +180,12 @@ def create_snapshot_dag(dag_id: str, snapshot_name: str, parameters: dict) -> DA
 
     with dag:
         params = build_request_params(snapshot_name)
+
         run_snapshot = run_snapshot_service_v2(params)
         snapshot_state_check = check_snapshot_is_done(run_snapshot)
         snapshot_result = get_snapshot_result()
 
         params >> run_snapshot >> snapshot_state_check >> snapshot_result
-
     return dag
 
 

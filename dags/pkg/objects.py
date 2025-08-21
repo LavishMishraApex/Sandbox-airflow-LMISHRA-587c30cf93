@@ -1,6 +1,7 @@
 from typing import List
-from  pkg.utility import get_existing_uris
-from  config.globals import GCP_PROJECTS
+from pkg.utility import get_existing_uris
+# from  config.globals import GCP_PROJECTS
+
 
 class FilterKey(object):
     def __init__(self, method, column):

@@ -40,9 +40,7 @@ SELECT * FROM
 from dags.pkg.utility.bigquery_functionalities import *  # needs path changed
 import logging
 # Needs to be fetched from configurations
-from config.globals import GCP_PROJECTS
-
-INTERNAL_HUB = GCP_PROJECTS["INTERNAL_HUB"]
+INTERNAL_HUB = "apex-internal-hub-dev-00"
 
 
 def fetch_list_of_arguments_of_a_table_function(routine_id):
@@ -90,4 +88,15 @@ def fetch_table_function_for_snapshot(snapshot_job_name: str) -> [bool, str]:
             '''
             return True, "apex-internal-hub-dev-00.assets.snapshot_latest_prices"  # Example table function, remove in production
             return False, "Table Function is not configured"
-    return [True, 'random_return']
+
+
+def get_table_function_invocation_phrase(table_function_name: str, parameters: dict) -> str:
+    """
+    Returns the invocation phrase for a table function
+    :param table_function_name: Full qualified name of the table function.
+    :param parameters: Dictionary of parameters to be passed to the table function."""
+    table_function_invocation_phrase = f"`{table_function_name}`("
+    table_function_invocation_phrase += ", ".join(
+        [f"{k} => {v}" for k, v in parameters.items()])
+    table_function_invocation_phrase += ")"
+    return table_function_invocation_phrase
