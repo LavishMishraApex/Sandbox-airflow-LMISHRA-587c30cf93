@@ -1,3 +1,6 @@
+import requests
+from dags.pkg.utility.auth_utils import get_ascend_jwt  # needs path changed
+import base64
 import logging
 import json
 
@@ -54,8 +57,8 @@ def create_sql_for_dhp_parameters(parameters):
     Returns:-
         sql: sql query to fetch the results from DHP
     '''
-    sql = """   SELECT * FROM 
-                {}  
+    sql = """   SELECT * FROM
+                {}
     """.format(DHP_INTERNAL_HUB_HEALTH)
     and_where_flag = False
     for key, value in parameters.items():
@@ -255,3 +258,99 @@ def fetch_dhp_test_description_for_snapshot(snapshot_job_name: str, process_date
         return False, "Entry found in DHP but is_healthy is not set to 1", {}
 
     return True, return_message, test_description_json
+
+
+'''
+changes for publish to v2
+
+'''
+
+
+DATALAKE_ASCEND_DHP_SA = "eyJrZXlJZCI6IjAxSzBXV0Q0TTBTM1BBMkc3TkQwUkpNV0RIIiwicHJpdmF0ZUtleSI6Ii0tLS0tQkVHSU4gUFJJVkFURSBLRVktLS0tLVxuTUlJRXZnSUJBREFOQmdrcWhraUc5dzBCQVFFRkFBU0NCS2d3Z2dTa0FnRUFBb0lCQVFDUGxERW9VZVFyUldzUFxuUTBSODlja0FJZ0pKVlQ0L2FvbjBTL05iajN3Y0FuNUw1YUpwMm93NC84QlpyNC9jU3YvcUhiVDJqV0lkVDVjRFxuc1hPU0pzVDhzelVmT09yeEREZzVQNzJvcFFhaDJOc2VLZ0plbWZDYW9WOHo4eGJ5RDV3ME9MMXBiUTlOSklQNlxuMWEybTNPOURuQndsMXJqeHQ2NVVBQjlyOTRBTFpxN0JOUTRYS0pPMEV2KzZSblBvY0JtdUVFZU5zd0tjdTIyWlxuTG1aZFFZNVdEYTF3RU04WjdDYjI1SjEyeHBwYzYrUVNiTmN2cjJNZUZQMTBBUWFuTHgwMU8rODRraHh4N0Z1N1xuZHFodE1WMUVRNTNxNGpRU0VlV054eDdwVTlIcGVXRmo2VTkxM2pveGhLZkF1d3pYa0FnYXpvOURlZVFwUGpVQlxuZnl6ZndlNTdBZ01CQUFFQ2dnRUFXb1dkQklXMDdFOGs4NGQrbTZZK3ByWEthVCswTWpsU1p0S255TmRLOFVIbFxuTEtiSDRpTW0reHpMd2YrOUhLK3diNE54UDJ6ZUtncXU5R1locmtpQk02MHMxZFdGMHBuWXJNZHlKT3grcFBYYlxuR0VaMkhmekNSRXR2Z1lwR3NqQ0RWQzFkeGlVN1czQ2xRVFVNK2NJYm02M0YxVmx1V3Y5cWlvMVZRalhWNWRsUVxuWXNVODMyMWlYelNnenp4ME1OVWxzWXFJVHBtNlVMYTFvQ0xUcVNGbGhYUVBORkVWaFM1dURvc2o4QjRCa3B0aVxuN3pGNGFuSmQ1R1pPWnlveG9uWnk1L0VKdzhwcmNvaWJYaE9ENTEvS2thM09xUWpGejk3RThRSG1DQ3ZDQXFqWFxueEFhSkdKRWJBVVJRY1FPSjJ5eEQ1bHNOMC9vdFQwc3J4VW8rVzBRUjRRS0JnUURibll6Y3FVUFJqWTFxWWQ2S1xuSHFjNDNTUlVzQkUxRmx6UGx1YnNMZUd6YStwMWpQMTZ4MTJDb3o5NWlmenphS09NYTIvWFRIMlJleWF2QnFDZ1xuaWhuUDZsUDFzeldDK3ExZEJUTklJU1Q0L0NnbXBXNjFTdWhsZ0w0NkVUd1Zja0dlcy9TN0wwcWJvK01Cbzl6NFxuZ2UzWWdONDh5ZnNmS2l5Y2diSnYxSnFyQ3dLQmdRQ25YYnpnWkVIM3U4QlpkdnJrSDZMb1h0NncyeUQydmZ0bFxuc09QRmJRVnhpRzJHZ2hGVVJYS0phQmJ6eWZzS1BJbDhubEZuN1JjcHRCcW9DRjdnUUdMQ0hDd2ZlNmg2Q1FyNVxuL0pLYld1bnM2QURsaXhUMzZ4L2hJNDBIZ0ozeVBlUFRJMEZraC9DalUrdzQyeGFCSTVDN2NsMzhILzM3NWxPS1xuMUNLdjloZHdVUUtCZ1FDSFNZTGczQlMvSG1nalJLOEdmdU9jai80MWZWRGNWeTVOWXpSV0FkMnIzYXJOUjFGUFxuTlVsUmxLY2hnL09qTHE2eGJlMnp2NWNLNjhaa3c3eG5xU3RGZmFEREZ1YThEUmlHMlJGQ09jakE2UFVDK1o0OVxuYUN2SmU0bXowN0lqdEFMZ2RSTXB6SFExZEx2KzRxYlpINUVaY2lsMVlTZWxoeUY4T0JsbjhweGxDUUtCZ1FDaVxuQ1ZVR0Fzc0RhQmtRQk90ZTFXcEpneUFqSmVSQ1B5a1lDU3hjUmZMUk9uNmZqV250cHRiL1JYR0RVZmZrcnp1RlxuRlZwSFBmb0EvRWdhaXhBZ0dQWUViSFlqZlB0ZU8wY1BSSU5FT2I3bENMRmxpMFFmeXRvd2hOVFRnS2hxa1pUelxuSTl6NTBjc2V0ZStzRkNFem9oVk1CYXdNbjRTc3p3L3ZCdmNXV1RIVUlRS0JnR1BJVGN4SENQeXV4MjV3VEh0WVxuSEJvczN0WEdWYkpRT0JOV2JMS3I3Vkc3enowQVI2ZFdLeTgzampCMVBaSHRrSkVSbEUrbVVKTmFlVnVzR1BhYVxub21vOExPaXdldDA1V2xiUVlFa0lySHlLdm1HZzhpRWxVUC9uNldiaDBBNDFJK3EwVnNZaVIyVzJqTnVzOHlrYlxuWUhjbTl4a2kza1RTM00zajZkdEd5Y0xpXG4tLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tIiwibmFtZSI6InN2Yy1kaHAtZGV2LWRhdGFsYWtlLW1nbXQiLCJvcmdhbml6YXRpb24iOiJmaXJtcy9BRlMiLCJ0eXBlIjoic2VydmljZUFjY291bnQifQ=="
+dhpv2_url = Variable.get(
+    "dhp_health_report_v2_url", default_var=f"https://data-health-report.{ENVIRONMENT}.gcp.apexclearing.com")
+
+
+def publish_report_to_dhp_v2(publish_dict):
+    jwt_token = get_ascend_jwt(json.loads(
+        base64.b64decode(DATALAKE_ASCEND_DHP_SA)))
+
+    headers = {"Content-Type": "application/json",
+               "Authorization": f"Bearer {jwt_token}"}
+
+    logging.info("publishing following dict to DHP v2 {}".format(publish_dict))
+    response = requests.post(
+        dhpv2_url, headers=headers, data=json.dumps(publish_dict), timeout=300)
+
+    logging.info(response.status_code)
+    logging.info(response.text)
+
+    if response.status_code == 200:
+        logging.info("Health report published successfully.")
+        return True
+    else:
+        logging.info("Failed to publish health report.")
+        logging.info(f"Error: {response.status_code} - {response.text}")
+        return False
+
+
+def certify_asset(parameters):
+    '''
+    This function takes in a dict to certify an asset in DHP.
+    This parameters should have following keys set
+    1. all the minimum keys that are required to certify health of an asset, check the DHP documentation for details
+    2. a separate dict with key "additional_report_details" if you want to set extra keys in the report details section of your request
+    Example input
+
+    {
+        "project_id": "apex-internal-hub-dev-00",
+        "report_name": "data_asset_health",
+        "description": "Reports the health of a data asset",
+        "publisher": "datalake@apexclearing.com",
+        "dataset_name": "snapshot",
+        "table_name": "daily_accounts_v2",
+        "process_date": "2025-01-15",
+        "is_healthy": true,
+
+        "additional_report_details": {
+            "some_key": "some_value"
+        }
+
+    }
+    or
+    {
+        "full_table_name": "apex-internal-hub-dev-00.snapshot.daily_accounts_v2",
+        "report_name": "data_asset_health",
+        "description": "Reports the health of a data asset",
+        "publisher": "datalake@apexclearing.com",
+        "process_date": "2025-01-15",
+        "is_healthy": true,
+
+        "additional_report_details": {
+            "some_key": "some_value"
+        }
+
+    }
+    '''
+
+    dhp_publish_dict = {}
+    if "full_table_name" in parameters:
+        project_id, dataset_name, table_name = parameters["full_table_name"].split(
+            ".")
+    else:
+        project_id = parameters["project_id"]
+        dataset_name = parameters["dataset_name"]
+        table_name = parameters["table_name"]
+    dhp_publish_dict["project_id"] = project_id
+    dhp_publish_dict["report_name"] = "data_asset_health"
+    dhp_publish_dict["description"] = parameters["description"]
+    dhp_publish_dict["publisher"] = parameters["publisher"]
+    dhp_publish_dict["report_details"] = {}
+    dhp_publish_dict["report_details"]["dataset_name"] = dataset_name
+    dhp_publish_dict["report_details"]["table_name"] = table_name
+    dhp_publish_dict["report_details"]["process_date"] = parameters["process_date"]
+    dhp_publish_dict["report_details"]["is_healthy"] = parameters["is_healthy"]
+    if "additional_report_details" in parameters:
+        for key, value in parameters["additional_report_details"].items():
+            dhp_publish_dict["report_details"][key] = value
+    return publish_report_to_dhp_v2(dhp_publish_dict)

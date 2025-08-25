@@ -61,6 +61,11 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
     all_tests_succeeded = True
     row_count_test_succeeded = True
     row_count_failure_tables_list = []
+    dhp_report_parameters = {
+        "description": "Certification of asset to be ready to be consumed by snapshot name {job_name}",
+        "process_date": process_date,
+        "publisher": "gcp-dataplatform@apexclearing.com"
+    }
     for row in results:
         max_id_test_name = row["max_id_test_name"]
         dhp_test_names_array = json.loads(row["dhp_test_names_array"])
@@ -76,23 +81,30 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
         parameters["table_name"] = table_id
         parameters["process_date"] = process_date
         results_for_table = {}
+        table_tests_succeeded = True
         for test_name in dhp_test_names_array:
             parameters["test_name"] = test_name
             entry_found, is_healthy, test_description_json = fetch_from_dhp(
                 parameters)  # this line was changed to fetch_from_dhp
-            all_tests_succeeded = all_tests_succeeded and entry_found and is_healthy
+            table_tests_succeeded = table_tests_succeeded and entry_found and is_healthy
             results_for_table[test_name] = {
                 "entry_found": entry_found, "is_healthy": is_healthy, }
             if test_name == max_id_test_name and entry_found and is_healthy:
                 results_for_table[test_name]["test_description_json"] = test_description_json
                 test_succeeded, row_count_message = replication_validation(
                     test_description_json, table_function_for_replication_validation)
+                table_tests_succeeded = table_tests_succeeded and test_succeeded
                 row_count_test_succeeded = row_count_test_succeeded and test_succeeded
                 results_for_table[test_name]["row_count_verification_message"] = row_count_message
                 if not test_succeeded:
                     row_count_failure_tables_list.append(table_name)
-
+        all_tests_succeeded = all_tests_succeeded and table_tests_succeeded
+        # publishing results to DHP v2
+        dhp_report_parameters["full_table_name"] = table_name
+        dhp_report_parameters["is_healthy"] = table_tests_succeeded
+        certify_asset(dhp_report_parameters)
         results_for_job[table_name] = results_for_table
+
     logging.info("results_for_job are {}".format(results_for_job))
     logging.info("all_tests_succeeded is {}".format(all_tests_succeeded))
     if not all_tests_succeeded:
