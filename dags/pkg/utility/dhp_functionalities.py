@@ -287,11 +287,11 @@ def publish_report_to_dhp_v2(publish_dict):
 
     if response.status_code == 200:
         logging.info("Health report published successfully.")
-        return True
+        return True, response
     else:
         logging.info("Failed to publish health report.")
         logging.info(f"Error: {response.status_code} - {response.text}")
-        return False
+        return False, response
 
 
 def certify_asset(parameters):

@@ -66,6 +66,8 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
         "process_date": process_date,
         "publisher": "gcp-dataplatform@apexclearing.com"
     }
+    dhp_publish_succeeded = True
+    dhp_publish_failed_tables = []
     for row in results:
         max_id_test_name = row["max_id_test_name"]
         dhp_test_names_array = json.loads(row["dhp_test_names_array"])
@@ -102,7 +104,13 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
         # publishing results to DHP v2
         dhp_report_parameters["full_table_name"] = table_name
         dhp_report_parameters["is_healthy"] = table_tests_succeeded
-        certify_asset(dhp_report_parameters)
+        is_dhp_publish_success, response_json = certify_asset(
+            dhp_report_parameters)
+        dhp_publish_succeeded = dhp_publish_succeeded and is_dhp_publish_success
+        if not is_dhp_publish_success:
+            dhp_publish_failed_tables.append(table_name)
+            logging.info("Failed to publish DHP report for table {}, status_code is {}, response is {}".format(
+                table_name, response_json.status_code, response_json.text))
         results_for_job[table_name] = results_for_table
 
     logging.info("results_for_job are {}".format(results_for_job))
@@ -114,6 +122,9 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
     if not row_count_test_succeeded:
         raise AirflowException(
             f"row count validation failed for the following tables, please check their status {row_count_failure_tables_list} for job_name {job_name}")
+    if not dhp_publish_succeeded:
+        raise AirflowFailException(
+            f"Failed to publish health report to DHP v2 for the following tables, please check their status {dhp_publish_failed_tables} for job_name {job_name}")
 
 
 def check_dhp_status(**kwargs):
