@@ -4,7 +4,7 @@ import json
 from airflow.hooks.base import BaseHook
 import datetime
 import requests
-from ascend.datalake.pkg.utility import get_id_token
+from dags.pkg.utility import get_id_token
 
 from requests_toolbelt.adapters.socket_options import TCPKeepAliveAdapter
 from airflow.operators.python import get_current_context
