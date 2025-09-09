@@ -8,8 +8,8 @@ from dags.pkg.tasks import dhp_validations
 from dags.pkg.utility.bigquery_functionalities import *
 from dags.pkg.tasks import dhp_validations
 
-job_name = "latest_prices"
-process_date = "2025-08-19"
+job_name = "snapshot_windowing_test"
+process_date = "2025-09-04"
 
 
 def create_dag(dag_id, schedule):

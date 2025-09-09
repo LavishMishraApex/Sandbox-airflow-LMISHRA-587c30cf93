@@ -44,23 +44,17 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
     returns:- None
         This function raises an AirflowException if any of the tests fail
     '''
-    results_for_job = {}
-    all_tests_succeeded = True
-    row_count_test_succeeded = True
-    row_count_failure_tables_list = []
     dhp_report_parameters = {
         "description": "Certification of asset to be ready to be consumed by snapshot name {job_name}",
         "process_date": process_date,
         "publisher": "gcp-dataplatform@apexclearing.com"
     }
-    dhp_publish_succeeded = True
-    dhp_publish_failed_tables = []
+    failed_tables = []
+    all_tables_succeeded = True
     for row in results:
         max_id_test_name = row["max_id_test_name"]
         dbt_test_name_for_replication_validation = row["dbt_test_name_for_replication_validation"]
         dhp_test_names_array = json.loads(row["dhp_test_names_array"])
-        logging.info("max_id_test_name is {} and dhp_test_names_array is {} and dbt_test_name_for_replication_validation is {}".format(
-            max_id_test_name, dhp_test_names_array, dbt_test_name_for_replication_validation))
         table_name = row["table_name"]
         # split the table name into project_id, dataset_id, table_id
         project_id, dataset_id, table_id = table_name.split(".")
@@ -69,47 +63,56 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
         parameters["dataset_name"] = dataset_id
         parameters["table_name"] = table_id
         parameters["process_date"] = process_date
+        logging.info(
+            "::group:: validations for table_name {}".format(table_name))
+        logging.info("max_id_test_name is {} and dhp_test_names_array is {} and dbt_test_name_for_replication_validation is {}".format(
+            max_id_test_name, dhp_test_names_array, dbt_test_name_for_replication_validation))
         results_for_table = {}
         table_tests_succeeded = True
+        results_for_table = {}
+        results_for_table["test_status_fetched_from_dhp"] = {}
+        results_for_table["row_count_validation"] = {}
+        results_for_table["dhp_report_status"] = {}
         for test_name in dhp_test_names_array:
             parameters["test_name"] = test_name
             entry_found, is_healthy, test_description_json = fetch_from_dhp(
                 parameters)  # this line was changed to fetch_from_dhp
             table_tests_succeeded = table_tests_succeeded and entry_found and is_healthy
-            results_for_table[test_name] = {
+            results_for_table["test_status_fetched_from_dhp"][test_name] = {
                 "entry_found": entry_found, "is_healthy": is_healthy, }
             if test_name == max_id_test_name and entry_found and is_healthy:
-                results_for_table[test_name]["test_description_json"] = test_description_json
+                results_for_table["row_count_validation"]["test_name"] = test_name
+                results_for_table["row_count_validation"]["test_description_json"] = test_description_json
                 test_succeeded, row_count_message = replication_validation(
                     test_description_json, dbt_test_name_for_replication_validation)
                 table_tests_succeeded = table_tests_succeeded and test_succeeded
-                row_count_test_succeeded = row_count_test_succeeded and test_succeeded
-                results_for_table[test_name]["row_count_verification_message"] = row_count_message
+                results_for_table["row_count_validation"]["test_succeeded"] = test_succeeded
+                results_for_table["row_count_validation"]["row_count_verification_message"] = row_count_message
                 if not test_succeeded:
-                    row_count_failure_tables_list.append(table_name)
-        all_tests_succeeded = all_tests_succeeded and table_tests_succeeded
+                    logging.info(
+                        "failed to validate row counts : {}".format(row_count_message))
         # publishing results to DHP v2
         dhp_report_parameters["full_table_name"] = table_name
         dhp_report_parameters["is_healthy"] = table_tests_succeeded
         is_dhp_publish_success, response_json = certify_asset(
             dhp_report_parameters)
-        dhp_publish_succeeded = dhp_publish_succeeded and is_dhp_publish_success
+        results_for_table["dhp_report_status"]["is_dhp_publish_success"] = is_dhp_publish_success
+        results_for_table["dhp_report_status"]["response_json"] = response_json.json(
+        )
+        table_tests_succeeded = table_tests_succeeded and is_dhp_publish_success
         if not is_dhp_publish_success:
-            dhp_publish_failed_tables.append(table_name)
             logging.info("Failed to publish DHP report for table {}, status_code is {}, response is {}".format(
                 table_name, response_json.status_code, response_json.text))
-        results_for_job[table_name] = results_for_table
-    logging.info("results_for_job are {}".format(results_for_job))
-    logging.info("all_tests_succeeded is {}".format(all_tests_succeeded))
-    if not all_tests_succeeded:
+        all_tables_succeeded = all_tables_succeeded and table_tests_succeeded
+        logging.info("results_for_table for table_name {} is {}".format(
+            table_name, results_for_table))
+        logging.error("::endgroup::")
+        if not table_tests_succeeded:
+            failed_tables.append(table_name)
+    logging.info("all_tables_succeeded is {}".format(all_tables_succeeded))
+    if not all_tables_succeeded:
         raise AirflowException(
-            "One or more tests failed for job_name {}".format(job_name))
-    if not row_count_test_succeeded:
-        raise AirflowException(
-            f"row count validation failed for the following tables, please check their status {row_count_failure_tables_list} for job_name {job_name}")
-    if not dhp_publish_succeeded:
-        raise AirflowFailException(
-            f"Failed to publish health report to DHP v2 for the following tables, please check their status {dhp_publish_failed_tables} for job_name {job_name}")
+            "One or more tests tables for job_name {}, list of tables failed is {}".format(job_name, failed_tables))
 
 
 def check_dhp_status(**kwargs):

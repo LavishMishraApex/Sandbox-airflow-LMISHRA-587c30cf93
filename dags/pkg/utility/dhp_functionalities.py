@@ -180,6 +180,73 @@ DHP_INTERNAL_HUB_HEALTH = "apex-internal-hub-dev-00.datalake_status.internal_hub
 
 # Needs to be fetched from globals
 DHP_PRE_SNAPSHOT_CONFIGURATION = "apex-datalake-mgmt-dev-00.snapshot_service.pre_snapshot_dhp_configuration"
+# Needs to be fetched from globals
+DHP_INTERNAL_HUB_HEALTH_v2 = "apex-internal-hub-dev-00.datalake_status.datalake_test_v2"
+
+
+def create_sql_for_dhpv2_parameters(parameters):
+    '''
+    Description:-
+        Takes parameters as input and creates the sql to fetch the results from DHP v2
+    Input:-
+        parameter: dictionary containing the parameters for which would then be used
+        to create the sql w.r.t. the parameters that need to be fetched
+    Returns:-
+        sql: sql query to fetch the results from DHP v2
+    '''
+    sql = f"""SELECT test_description, is_healthy
+    FROM (
+    SELECT
+        s.publish_time,
+        s.project_id AS project_name,
+        s.dataset_name,
+        s.table_name,
+        s.process_date,
+        s.publisher,
+        s.report_name AS test_name,
+        test_description,
+        is_healthy,
+        ROW_NUMBER() OVER (
+            PARTITION BY
+            s.project_id,
+            s.dataset_name,
+            s.table_name,
+            s.process_date,
+            s.publisher,
+            s.report_name
+            ORDER BY s.publish_time DESC
+        ) latest_record_identifier
+    FROM
+        {DHP_INTERNAL_HUB_HEALTH_v2} AS s
+    Qualify latest_record_identifier = 1
+    ) h
+        """
+    and_where_flag = False
+    for key, value in parameters.items():
+        if not and_where_flag:
+            sql += f""" WHERE  {key} = "{value}"\n"""
+            and_where_flag = True
+        else:
+            sql += f""" AND {key} = "{value}"\n"""
+    return sql
+
+
+def fetch_from_dhp_v2(parameters: dict) -> [bool, bool, dict]:
+    '''
+    Run Validation test to see if the view/table function is ready to be snapshotted
+    '''
+    sql_for_the_test = create_sql_for_dhpv2_parameters(parameters)
+    logging.info(
+        "Running query to check if entry exists , query: %s", sql_for_the_test)
+    dhp_test_result = list(run_query(sql_for_the_test))
+    logging.info("Result of query to check if entry exists len(result): %s", len(
+        dhp_test_result))
+    if not dhp_test_result:
+        return False, False, {}
+    test_description = dhp_test_result[0]['test_description'].replace(
+        "'", "\"")
+    test_description_json = json.loads(test_description)
+    return True, dhp_test_result[0]['is_healthy'], test_description_json
 
 
 def fetch_from_dhp_v1(parameters: dict) -> [bool, bool, dict]:
@@ -200,7 +267,12 @@ def fetch_from_dhp_v1(parameters: dict) -> [bool, bool, dict]:
 
 
 def fetch_from_dhp(parameters: dict) -> [bool, bool, dict]:
-    return fetch_from_dhp_v1(parameters)
+    has_data, is_healthy, test_description_json = fetch_from_dhp_v2(
+        parameters)
+    if has_data:
+        return has_data, is_healthy, test_description_json
+    else:
+        return fetch_from_dhp_v1(parameters)
 
 
 def check_if_entry_for_row_count_validation_exists(snapshot_job_name: str, process_date: str) -> list[bool, bool, dict]:
