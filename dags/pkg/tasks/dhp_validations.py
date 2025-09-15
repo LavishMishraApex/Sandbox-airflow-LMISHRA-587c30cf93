@@ -76,7 +76,10 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
         for test_name in dhp_test_names_array:
             parameters["test_name"] = test_name
             entry_found, is_healthy, test_description_json = fetch_from_dhp(
-                parameters)  # this line was changed to fetch_from_dhp
+                parameters)
+            if not entry_found or not is_healthy:
+                logging.error("DHP test failed for table_name {}, test_name {}, entry_found is {}, is_healthy is {}".format(
+                    table_name, test_name, entry_found, is_healthy))
             table_tests_succeeded = table_tests_succeeded and entry_found and is_healthy
             results_for_table["test_status_fetched_from_dhp"][test_name] = {
                 "entry_found": entry_found, "is_healthy": is_healthy, }
@@ -89,7 +92,7 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
                 results_for_table["row_count_validation"]["test_succeeded"] = test_succeeded
                 results_for_table["row_count_validation"]["row_count_verification_message"] = row_count_message
                 if not test_succeeded:
-                    logging.info(
+                    logging.error(
                         "failed to validate row counts : {}".format(row_count_message))
         # publishing results to DHP v2
         dhp_report_parameters["full_table_name"] = table_name
@@ -97,22 +100,21 @@ def validate_dhp_tests_for_job(job_name: str, process_date: str, results: list):
         is_dhp_publish_success, response_json = certify_asset(
             dhp_report_parameters)
         results_for_table["dhp_report_status"]["is_dhp_publish_success"] = is_dhp_publish_success
-        results_for_table["dhp_report_status"]["response_json"] = response_json.json(
-        )
+        results_for_table["dhp_report_status"]["response_json"] = response_json
         table_tests_succeeded = table_tests_succeeded and is_dhp_publish_success
         if not is_dhp_publish_success:
-            logging.info("Failed to publish DHP report for table {}, status_code is {}, response is {}".format(
+            logging.error("Failed to publish DHP report for table {}, status_code is {}, response is {}".format(
                 table_name, response_json.status_code, response_json.text))
         all_tables_succeeded = all_tables_succeeded and table_tests_succeeded
         logging.info("results_for_table for table_name {} is {}".format(
             table_name, results_for_table))
-        logging.error("::endgroup::")
+        logging.info("::endgroup::")
         if not table_tests_succeeded:
             failed_tables.append(table_name)
     logging.info("all_tables_succeeded is {}".format(all_tables_succeeded))
     if not all_tables_succeeded:
         raise AirflowException(
-            "One or more tests tables for job_name {}, list of tables failed is {}".format(job_name, failed_tables))
+            "One or more tables for job_name {}, list of tables failed is {}".format(job_name, failed_tables))
 
 
 def check_dhp_status(**kwargs):

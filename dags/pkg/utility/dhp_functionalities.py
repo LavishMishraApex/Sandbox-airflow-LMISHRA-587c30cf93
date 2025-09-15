@@ -334,7 +334,6 @@ def fetch_dhp_test_description_for_snapshot(snapshot_job_name: str, process_date
 
 '''
 changes for publish to v2
-
 '''
 
 
