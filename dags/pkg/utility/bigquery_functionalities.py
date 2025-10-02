@@ -21,10 +21,11 @@ ENVIRONMENT = "dev"
 AIRFLOW_SA = f"airflow@apex-airflow-{ENVIRONMENT}-00.iam.gserviceaccount.com"
 
 
-def make_bigquery_client():
-    MGMT_PROJECT = Variable.get("DATALAKE_MGMT")
+def make_bigquery_client(execution_project: str = None) -> bigquery.Client:
+    if not execution_project:
+        execution_project = Variable.get("DATALAKE_MGMT")
     creds = get_impersonated_creds(AIRFLOW_SA, target_scopes=scopes)
-    bq_client = bigquery.Client(credentials=creds, project=MGMT_PROJECT)
+    bq_client = bigquery.Client(credentials=creds, project=execution_project)
     return bq_client
 
 
