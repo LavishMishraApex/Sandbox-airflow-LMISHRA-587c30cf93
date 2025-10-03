@@ -1,5 +1,6 @@
 
 
+from ast import Param
 import pytz
 from datetime import datetime
 from airflow.operators.python import PythonOperator
@@ -12,7 +13,22 @@ from pkg.utility.bigquery_functionalities import *
 from pkg.utility.astro_log_interactions import return_latest_trigger_username
 
 dag_params = {"publish_dict": {}, "sql": "",
-              "is_healthy_value_to_publish": ""}
+              "is_healthy_value_to_publish": "", "jira_ticket": ""}
+
+
+def jira_ticket_validation(**kwargs):
+    if "jira_ticket" not in kwargs['dag_run'].conf or kwargs['dag_run'].conf["jira_ticket"] == "":
+        raise AirflowException(
+            "jira_ticket must be provided as part of DAG arguments")
+    else:
+        logging.info(
+            f"Jira ticket provided is {kwargs['dag_run'].conf['jira_ticket']}")
+        if 'NDP' not in kwargs['dag_run'].conf['jira_ticket'] and 'TECHOPS' not in kwargs['dag_run'].conf['jira_ticket']:
+            jira_ticket = kwargs['dag_run'].conf['jira_ticket']
+            raise AirflowException(
+                "jira_ticket must be a valid NDP or TECHOPS ticket")
+        ti = kwargs['ti']
+        ti.xcom_push(key='jira_ticket', value=jira_ticket)
 
 
 def store_latest_trigger_user_function(dag_id: str, **kwargs):
@@ -47,6 +63,8 @@ def publish_status_to_dhp(**kwargs):
         task_ids='store_latest_triggered_user', key='latest_triggered_user')
     logging.info(
         f"Latest triggered user pulled from XCom is {latest_triggered_user}")
+    jira_ticket = ti.xcom_pull(
+        task_ids='jira_ticket_validation', key='jira_ticket')
     if "publish_dict" in kwargs['dag_run'].conf and kwargs['dag_run'].conf["publish_dict"] != {}:
         publish_dict = kwargs['dag_run'].conf["publish_dict"]
         if publish_dict["report_details"]["is_healthy"].lower() == "false":
@@ -55,6 +73,8 @@ def publish_status_to_dhp(**kwargs):
             publish_dict["report_details"]["is_healthy"] = True
         publish_dict["description"] += "!!Adhoc request to update status by user {}!!".format(
             latest_triggered_user)
+
+        publish_dict["description"] += " JIRA Ticket: {}".format(jira_ticket)
         is_publish_success, response_json = publish_single_healthy_status_to_dhp(
             publish_dict)
         if not is_publish_success:
@@ -97,6 +117,8 @@ def publish_status_to_dhp(**kwargs):
             }
             logging.info(
                 "publish_dict created is {}".format(dhp_publish_dict))
+            dhp_publish_dict["description"] += " JIRA Ticket: {}".format(
+                jira_ticket)
             is_publish_success, response_json = publish_single_healthy_status_to_dhp(
                 dhp_publish_dict)
             if not is_publish_success:
@@ -132,13 +154,20 @@ def create_dag(dag_id, schedule):
             dag=dag,
             provide_context=True
         )
+        jira_ticket_validation_task = PythonOperator(
+            task_id="jira_ticket_validation",
+            python_callable=jira_ticket_validation,
+            dag=dag,
+            provide_context=True,
+            retries=0
+        )
         update_all_unhealthy_dhp_status = PythonOperator(
             task_id="update_all_unhealthy_dhp_status",
             python_callable=publish_status_to_dhp,
             dag=dag,
             provide_context=True
         )
-        store_latest_trigger_user >> update_all_unhealthy_dhp_status
+        store_latest_trigger_user >> jira_ticket_validation_task >> update_all_unhealthy_dhp_status
         return dag
 
 
