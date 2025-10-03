@@ -24,6 +24,7 @@ def store_latest_trigger_user_function(dag_id: str, **kwargs):
 
 
 def publish_single_healthy_status_to_dhp(dhp_publish_dict: dict):
+
     if "description" not in dhp_publish_dict:
         dhp_publish_dict["description"] = "Update to make status healthy"
     if "publisher" not in dhp_publish_dict:
