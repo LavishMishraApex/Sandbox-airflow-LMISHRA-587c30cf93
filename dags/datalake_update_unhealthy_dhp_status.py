@@ -86,7 +86,7 @@ def publish_status_to_dhp(**kwargs):
         if publish_dict["report_name"] == "data_asset_heatlth":
             is_healthy_key = "is_healthy"
         else:
-            is_healthy_key = "tests_passed"
+            is_healthy_key = "test_passed"
         if publish_dict["report_details"][is_healthy_key].lower() == "false":
             publish_dict["report_details"][is_healthy_key] = False
         else:
