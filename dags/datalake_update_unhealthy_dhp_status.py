@@ -83,6 +83,14 @@ def publish_status_to_dhp(**kwargs):
         task_ids='jira_ticket_validation', key='jira_ticket')
     if "publish_dict" in kwargs['dag_run'].conf and kwargs['dag_run'].conf["publish_dict"] != {}:
         publish_dict = kwargs['dag_run'].conf["publish_dict"]
+        if publish_dict["report_name"] == "data_asset_heatlth":
+            is_healthy_key = "is_healthy"
+        else:
+            is_healthy_key = "tests_passed"
+        if publish_dict["report_details"][is_healthy_key].lower() == "false":
+            publish_dict["report_details"][is_healthy_key] = False
+        else:
+            publish_dict["report_details"][is_healthy_key] = True
         publish_dict["description"] += "!!Adhoc request to update status by user {}!!".format(
             latest_triggered_user)
         publish_dict["description"] += " JIRA Ticket: {}".format(
