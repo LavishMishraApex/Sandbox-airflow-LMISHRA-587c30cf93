@@ -129,11 +129,17 @@ def publish_status_to_dhp(**kwargs):
                     latest_triggered_user),
                 "publisher": "gcp-dataplatform@apexclearing.com",
                 "report_details":
-                {"dataset_name": row["dataset_name"],
+                {
+                    "dataset_name": row["dataset_name"],
                     "table_name": row["table_name"],
-                    "process_date": row["process_date"],
-                    "is_healthy": is_healthy_value_to_publish}
+                    "process_date": row["process_date"]
+                }
             }
+            if row["report_name"] != "data_asset_health":
+                is_healthy_key = "is_healthy"
+            else:
+                is_healthy_key = "test_passed"
+            dhp_publish_dict["report_details"][is_healthy_key] = is_healthy_value_to_publish
             logging.info(
                 "publish_dict created is {}".format(dhp_publish_dict))
             dhp_publish_dict["description"] += " JIRA Ticket: {}".format(
