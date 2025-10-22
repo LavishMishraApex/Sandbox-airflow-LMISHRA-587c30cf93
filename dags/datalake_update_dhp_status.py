@@ -83,7 +83,7 @@ def publish_status_to_dhp(**kwargs):
         task_ids='jira_ticket_validation', key='jira_ticket')
     if "publish_dict" in kwargs['dag_run'].conf and kwargs['dag_run'].conf["publish_dict"] != {}:
         publish_dict = kwargs['dag_run'].conf["publish_dict"]
-        if publish_dict["report_name"] == "data_asset_heatlth":
+        if publish_dict["report_name"] == "data_asset_health":
             is_healthy_key = "is_healthy"
         else:
             is_healthy_key = "test_passed"
@@ -135,7 +135,7 @@ def publish_status_to_dhp(**kwargs):
                     "process_date": row["process_date"]
                 }
             }
-            if row["report_name"] != "data_asset_health":
+            if row["report_name"] == "data_asset_health":
                 is_healthy_key = "is_healthy"
             else:
                 is_healthy_key = "test_passed"
@@ -156,7 +156,7 @@ def publish_status_to_dhp(**kwargs):
             "Either publish_dict or sql must be provided in as part of DAG arguments")
 
 
-def create_dag(dag_id, schedule):
+def create_dag(dag_id, schedule, doc_md=None):
     dag = DAG(
         dag_id=dag_id,
         schedule_interval=schedule,
@@ -169,7 +169,8 @@ def create_dag(dag_id, schedule):
             "owner": "datalake",
             "retries": 3,
         },
-        params=dag_params
+        params=dag_params,
+        doc_md=doc_md
     )
     with dag:
         store_latest_trigger_user = PythonOperator(
@@ -193,16 +194,20 @@ def create_dag(dag_id, schedule):
             provide_context=True,
             retries=0
         )
-        update_all_unhealthy_dhp_status = PythonOperator(
-            task_id="update_all_unhealthy_dhp_status",
+        update_status_in_dhp = PythonOperator(
+            task_id="update_status_in_dhp",
             python_callable=publish_status_to_dhp,
             dag=dag,
             provide_context=True
         )
-        store_latest_trigger_user >> jira_ticket_validation_task >> block_update_check >> update_all_unhealthy_dhp_status
+        store_latest_trigger_user >> jira_ticket_validation_task >> block_update_check >> update_status_in_dhp
         return dag
 
 
-dag_id = "datalake_update_unhealthy_dhp_status"
+dag_id = "datalake_update_dhp_status"
 schedule = None
-dag = create_dag(dag_id, schedule)
+doc_md = """
+### DAG to update DHP status
+Please checkout confluence documentation for more details. https://apexclearing.atlassian.net/wiki/spaces/NDP/pages/8826257523/Publishing+Adhoc+Health+Status+to+DHP
+"""
+dag = create_dag(dag_id, schedule, doc_md=doc_md)
