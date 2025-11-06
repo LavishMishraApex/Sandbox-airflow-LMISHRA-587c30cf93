@@ -1,6 +1,7 @@
 import pytz
 from datetime import datetime, timezone
 from airflow.operators.python import PythonOperator
+from airflow.operators.empty import EmptyOperator
 from airflow import DAG
 import logging
 import requests
@@ -15,9 +16,7 @@ check_unhealthy_dhp_status_parameters = {
     "data_asset_health_report_name": "data_asset_health",
     "dhp_validation_config_table_name": "apex-datalake-mgmt-dev-00.snapshot_service.pre_snapshot_dhp_configuration",
     "datalake_report_latest_health_table_name": "apex-internal-hub-dev-00.datalake_status.datalake_report_latest_health",
-    "snapshot_default_tests": ["row_count", "accessibility", "clear_text"],
 }
-DATALAKE_TEST_V2 = "apex-internal-hub-dev-00.datalake_status.datalake_test_v2"
 ACTIVE_SNAPSHOT_JOBS_TABLE = "apex-internal-hub-dev-00.common.active_snapshot_jobs"
 INTERNAL_HUB = "apex-internal-hub-dev-00"
 
@@ -35,26 +34,6 @@ def fetch_eod_job_names():
     eod_job_name_list = list(result['job_name']
                              for result in run_query(query_to_fetch_eod_snapshots))
     return eod_job_name_list
-
-
-def create_sql_for_eod_snapshots(eod_job_name_list, test_name_list):
-    sql = f"""
-    DECLARE EOD_SNAPSHOTS ARRAY<STRING> DEFAULT [{', '.join(f"'{job_name}'" for job_name in eod_job_name_list)}];
-    """
-    for test_name in test_name_list:
-        sql += f"""
-        SELECT project_id, dataset_name, table_name, report_name, process_date, publisher, is_healthy
-        FROM `{check_unhealthy_dhp_status_parameters["datalake_report_latest_health_table_name"]}`
-        where report_name = '{test_name}'
-        and is_healthy = 'false'
-        and process_date <= "{get_process_date()}"
-        and project_id = '{INTERNAL_HUB}'
-        and dataset_name = 'snapshots'
-        and table_name in UNNEST(EOD_SNAPSHOTS)
-        UNION ALL
-        """
-    sql = sql.rstrip("UNION ALL\n")
-    return sql
 
 
 def check_unhealthy_eod_dhp_validations_method():
@@ -117,7 +96,7 @@ def check_unhealthy_eod_dhp_validations_method():
         f"Found {len(result)} unhealthy DHP statuses for EOD validations. please check the query above to see all unhealthy reports")
 
 
-def check_unhealthy_snapshot_service_default_tests_method():
+def check_unhealthy_snapshot_service_updates_method():
     query_to_fetch_eod_snapshots = f"""
     SELECT job_name FROM `{ACTIVE_SNAPSHOT_JOBS_TABLE}` where  ("EOD") in UNNEST(labels)
     """
@@ -127,38 +106,25 @@ def check_unhealthy_snapshot_service_default_tests_method():
     if not eod_job_name_list:
         logging.info("No active EOD snapshot jobs found.")
         return
-    sql_to_fetch_unhealthy_default_tests = create_sql_for_eod_snapshots(
-        eod_job_name_list, check_unhealthy_dhp_status_parameters["snapshot_default_tests"])
+    sql_to_fetch_unhealthy_snapshot_updates = f"""
+    DECLARE EOD_SNAPSHOTS ARRAY<STRING> DEFAULT [{', '.join(f"'{job_name}'" for job_name in eod_job_name_list)}];
+        SELECT project_id, dataset_name, table_name, report_name, process_date, publisher, is_healthy
+        FROM `{check_unhealthy_dhp_status_parameters["datalake_report_latest_health_table_name"]}`
+        where is_healthy = 'false'
+        and process_date <= "{get_process_date()}"
+        and project_id = '{INTERNAL_HUB}'
+        and dataset_name = 'snapshots'
+        and table_name in UNNEST(EOD_SNAPSHOTS)
+        """
+
     logging.info(
-        f"Executing SQL to fetch unhealthy snapshot service default tests: {sql_to_fetch_unhealthy_default_tests}")
-    results = list(run_query(sql_to_fetch_unhealthy_default_tests))
+        f"Executing SQL to fetch unhealthy snapshot service assets updates: {sql_to_fetch_unhealthy_snapshot_updates}")
+    results = list(run_query(sql_to_fetch_unhealthy_snapshot_updates))
     if not results:
-        logging.info("No unhealthy snapshot service default tests found.")
+        logging.info("No unhealthy snapshot service assets updates found.")
         return
     raise AirflowException(
-        f"Found {len(results)} unhealthy snapshot service default tests. please check the query above to see all unhealthy reports")
-
-
-def check_unhealthy_snapshot_service_asset_health_method():
-    query_to_fetch_eod_snapshots = f"""
-    SELECT job_name FROM `{ACTIVE_SNAPSHOT_JOBS_TABLE}` where  ("EOD") in UNNEST(labels)
-    """
-    eod_job_name_list = list(result['job_name']
-                             for result in run_query(query_to_fetch_eod_snapshots))
-
-    if not eod_job_name_list:
-        logging.info("No active EOD snapshot jobs found.")
-        return
-    sql_to_fetch_unhealthy_asset_health = create_sql_for_eod_snapshots(
-        eod_job_name_list, [check_unhealthy_dhp_status_parameters["data_asset_health_report_name"]])
-    logging.info(
-        f"Executing SQL to fetch unhealthy snapshot service asset health: {sql_to_fetch_unhealthy_asset_health}")
-    results = list(run_query(sql_to_fetch_unhealthy_asset_health))
-    if not results:
-        logging.info("No unhealthy snapshot service asset health found.")
-        return
-    raise AirflowException(
-        f"Found {len(results)} unhealthy snapshot service asset health reports. please check the query above to see all unhealthy reports")
+        f"Found {len(results)} unhealthy snapshot service assets updates. please check the query above to see all unhealthy reports")
 
 
 def create_dag(dag_id, schedule):
@@ -178,6 +144,15 @@ def create_dag(dag_id, schedule):
     )
 
     with dag:
+        start = EmptyOperator(
+            task_id="Start",
+            dag=dag,
+        )
+        end = EmptyOperator(
+            task_id="End",
+            dag=dag,
+        )
+
         check_unhealthy_eod_dhp_validations = PythonOperator(
             task_id="check_unhealthy_eod_dhp_validations",
             python_callable=check_unhealthy_eod_dhp_validations_method,
@@ -186,21 +161,17 @@ def create_dag(dag_id, schedule):
             retries=0,
         )
 
-        check_unhealthy_snapshot_service_default_tests = PythonOperator(
-            task_id="check_unhealthy_snapshot_service_default_tests",
-            python_callable=check_unhealthy_snapshot_service_default_tests_method,
+        check_unhealthy_snapshot_service_updates = PythonOperator(
+            task_id="check_unhealthy_snapshot_service_updates",
+            python_callable=check_unhealthy_snapshot_service_updates_method,
             dag=dag,
             provide_context=True,
             retries=0,
         )
-        check_unhealthy_snapshot_service_asset_health = PythonOperator(
-            task_id="check_unhealthy_snapshot_service_asset_health",
-            python_callable=check_unhealthy_snapshot_service_asset_health_method,
-            dag=dag,
-            provide_context=True,
-            retries=0,
-        )
-
+        start >> [
+            check_unhealthy_eod_dhp_validations,
+            check_unhealthy_snapshot_service_updates,
+        ] >> end
         return dag
 
 
