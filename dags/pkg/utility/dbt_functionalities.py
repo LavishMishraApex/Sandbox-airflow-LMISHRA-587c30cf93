@@ -13,17 +13,21 @@ from airflow.operators.python import get_current_context
 ENVIRONMENT = "dev"
 
 
-def run_dbt_test(test_name: str, parameters: dict, slack_alert: bool = True):
+def run_dbt_test(test_name: str, parameters: dict, slack_alert: bool = True, target: str = None):
     """
-       Runs DBT test and publishes result to xcom
+    Runs DBT test and publishes result to xcom
 
-       :param table: Snapshot table name (e.g. 'daily_accounts')
-       :param process_date: e.g. '2021-01-01'
-       :param test_name: DBT Test name to run (e.g. 'internal_hub__snapshots__daily_accounts_row_count')
-       :return:
-       """
+    :param table: Snapshot table name (e.g. 'daily_accounts')
+    :param process_date: e.g. '2021-01-01'
+    :param test_name: DBT Test name to run (e.g. 'internal_hub__snapshots__daily_accounts_row_count')
+    :return:
+    """
     logging.info("Running dbt test {}".format(test_name))
-    test_command = 'dbt test --select {0} --vars '.format(test_name)
+    if target:
+        test_command = 'dbt test --select {0} --target {1} --vars '.format(
+            test_name, target)
+    else:
+        test_command = 'dbt test --select {0} --vars '.format(test_name)
     command = test_command + json.dumps(parameters).replace(' ', '')
     logging.info("Executing the dbt test command: {}".format(command))
     http_conn_id = "http_cloudrun_dbt"
@@ -41,7 +45,7 @@ def run_dbt_test(test_name: str, parameters: dict, slack_alert: bool = True):
             "Content-Type": "application/json"
         },
         data=json.dumps({"command": command, "source": "DAG",
-                         "log": context.get("task_instance").log_url,
+                        "log": context.get("task_instance").log_url,
                          "slack_alert": slack_alert}),
         timeout=7200,
     )
