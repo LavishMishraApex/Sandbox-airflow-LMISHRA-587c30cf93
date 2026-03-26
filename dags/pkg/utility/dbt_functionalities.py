@@ -9,6 +9,7 @@ from dags.pkg.utility import get_id_token
 from requests_toolbelt.adapters.socket_options import TCPKeepAliveAdapter
 from airflow.operators.python import get_current_context
 
+
 ENVIRONMENT = "dev"
 
 
