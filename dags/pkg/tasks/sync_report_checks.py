@@ -67,14 +67,23 @@ def run_single_test(test_record: dict, job_name: str, process_date: str) -> tupl
     """
     Executes a single sync report test with appropriate parameters.
 
+    This function runs a dbt test with the specified parameters and checks for both
+    execution errors and test failures. It distinguishes between test execution errors
+    (non-200 status codes) and test failures (successful execution but failed assertions).
+
     Args:
-        test_record (dict): Test configuration containing test_name and variables
-        job_name (str): The name of the job for parameter substitution
-        process_date (str): The process date for parameter substitution
+        test_record (dict): Test configuration containing:
+                           - test_name (str): Name of the dbt test to execute
+                           - variables (list): List of required variables (e.g., ['PROCESS_DATE', 'JOB_NAME'])
+        job_name (str): The name of the job for parameter substitution when 'JOB_NAME' is in variables
+        process_date (str): The process date for parameter substitution when 'PROCESS_DATE' is in variables
 
     Returns:
-        tuple: (test_name, error_dict) where error_dict is None if test passed,
-               otherwise contains 'text' and 'status_code' keys
+        tuple: (test_name, error_dict) where:
+               - test_name (str): The name of the executed test
+               - error_dict (dict|None): None if test passed successfully, otherwise a dictionary with:
+                   - 'text' (str): Error message describing the failure
+                   - 'status_code' (int): HTTP status code from the dbt test execution
     """
     logging.info(
         f"::group::     Validating sync report {test_record['test_name']}")
@@ -105,16 +114,24 @@ def run_single_test(test_record: dict, job_name: str, process_date: str) -> tupl
 
 def run_tests_for_asset(full_asset_name: str, sync_report_array: str, job_name: str, process_date: str) -> dict:
     """
-    Runs all sync report tests for a single asset.
+    Runs all sync report tests for a single asset and publishes results to DHP.
+
+    This function iterates through all configured tests for an asset, executes each test,
+    records the results, and publishes both individual test results and overall asset
+    health status to the Data Health Platform (DHP).
 
     Args:
-        full_asset_name (str): The full name of the asset being tested
-        sync_report_array (str): JSON string containing array of test configurations
-        job_name (str): The name of the job for parameter substitution
-        process_date (str): The process date for parameter substitution
+        full_asset_name (str): The full qualified name of the asset/table being tested
+                              (e.g., 'project.dataset.table_name')
+        sync_report_array (str): JSON string containing an array of test configurations,
+                                each with 'test_name' and 'variables' properties
+        job_name (str): The name of the job for parameter substitution in test execution
+        process_date (str): The process date for parameter substitution and DHP reporting
+                          (typically in YYYY-MM-DD format)
 
     Returns:
-        dict: Dictionary of test failures, empty if all tests passed
+        dict: Dictionary mapping failed test names to error details. Empty dict if all tests passed.
+              Error details include 'text' (error message) and optionally 'status_code'.
     """
     sync_report_array = json.loads(sync_report_array)
     logging.info(
@@ -139,6 +156,8 @@ def run_tests_for_asset(full_asset_name: str, sync_report_array: str, job_name: 
         if not is_dhp_publish_success:
             logging.error(
                 f"Failed to publish test result to DHP for test {test_name} on asset {full_asset_name}. Response: {response_json}")
+            errors_in_dbt_test[test_name] = {
+                "text": "ERROR IN PUBLISHING TO DHP " + response_json, }
 
     if errors_in_dbt_test:
         log_test_errors(errors_in_dbt_test)
@@ -149,10 +168,19 @@ def run_tests_for_asset(full_asset_name: str, sync_report_array: str, job_name: 
 
 def log_test_errors(errors_in_dbt_test: dict) -> None:
     """
-    Logs detailed error information for failed tests.
+    Logs detailed error information for failed sync report tests.
+
+    This function provides structured logging of test failures using Airflow's logging capabilities, including
+    collapsible groups (::group::) for better readability in CI/CD environments.
 
     Args:
-        errors_in_dbt_test (dict): Dictionary mapping test names to error details
+        errors_in_dbt_test (dict): Dictionary mapping test names to error details.
+                                  Each error detail is a dict containing:
+                                  - 'status_code' (int): HTTP status code from test execution
+                                  - 'text' (str): Detailed error message or stack trace
+
+    Returns:
+        None
     """
     logging.error(
         f"Sync Reports failed for the following tests: {list(errors_in_dbt_test.keys())}")
@@ -166,12 +194,24 @@ def log_test_errors(errors_in_dbt_test: dict) -> None:
 
 def publish_asset_health_status(full_asset_name: str, is_healthy: bool, process_date: str) -> None:
     """
-    Publishes health certification status to DHP for an asset.
+    Publishes health certification status to DHP (Data Health Platform) for an asset.
+
+    This function sends the overall health status of an asset to DHP based on whether
+    all sync report tests passed. It uses the certify_asset API to mark assets as
+    healthy or unhealthy for data quality tracking and monitoring purposes.
 
     Args:
-        full_asset_name (str): The full name of the asset
-        is_healthy (bool): Whether the asset passed all sync report checks
-        process_date (str): The process date for the certification
+        full_asset_name (str): The full qualified name of the asset/table 
+                              (e.g., 'project.dataset.table_name')
+        is_healthy (bool): True if the asset passed all sync report checks, False otherwise
+        process_date (str): The process date for the certification (typically YYYY-MM-DD format)
+
+    Returns:
+        None
+
+    Side Effects:
+        - Publishes health status to DHP via certify_asset API call
+        - Logs success/failure of the DHP publication using structured logging with ::group:: tags
     """
     dhp_dict = {
         "full_table_name": full_asset_name,
@@ -262,7 +302,7 @@ def sync_report_checks(job_name: str, process_date: str) -> PythonOperator:
         job_name (str): The name of the job for which to create the sync report checks task.
                        This will be appended to the task_id and passed to execute_tests.
         process_date (str): The process date to pass to the execute_tests function.
-                          Typically represents the data date being validated.
+                          Typically represents the date utilized within EOD DAG
 
     Returns:
         PythonOperator: A configured Airflow PythonOperator that will execute the
