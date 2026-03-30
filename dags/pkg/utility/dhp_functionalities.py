@@ -364,6 +364,77 @@ def publish_report_to_dhp_v2(publish_dict):
         return False, response
 
 
+def post_report_to_dhp(parameters):
+    '''
+    This function takes in a dict to post the results of a test to DHP.
+    This parameters should have following keys set
+    1. all the minimum keys that are required to certify health of an asset, check the DHP documentation for details
+    2. a separate dict with key "additional_report_details" if you want to set extra keys in the report details section of your request
+    Example input
+    {
+    "project_id": "apex-assets-dev-00",
+    "report_name": "ODS_replication_validation",
+    "description": "Validates the ODS replication",
+    "publisher": "datalake@apexclearing.com",
+    "dataset_name": "feeder",
+    "table_name": "apexinternal_assets_v1_price_apexinternal_assets_v1_price",
+    "process_date": "2025-01-15",  
+    "test_passed": true,
+    "additional_report_details": {
+            "some_key": "some_value"
+        }
+    }
+    or 
+    {
+    "full_table_name": "apex-assets-dev-00.snapshot.apexinternal_assets_v1_price_apexinternal_assets_v1_price",
+    "report_name": "ODS_replication_validation",
+    "description": "Validates the ODS replication",
+    "publisher": "datalake@apexclearing.com",
+    "process_date": "2025-01-15",  
+    "test_passed": true,
+    "additional_report_details": {
+            "some_key": "some_value"
+        }
+    }
+
+
+
+    {
+    "project_id": "apex-assets-dev-00",
+    "report_name": "ODS_replication_validation",
+    "description": "Validates the ODS replication",
+    "publisher": "assets-svc-validator@apexclearing.com",
+    "report_details": {
+      "dataset_name": "feeder",
+      "table_name": "apexinternal_assets_v1_price_apexinternal_assets_v1_price",
+      "process_date": "2025-01-15",
+      "test_passed": true
+    }
+}
+    '''
+    publish_dict = {}
+    if "full_table_name" in parameters:
+        project_id, dataset_name, table_name = parameters["full_table_name"].split(
+            ".")
+    else:
+        project_id = parameters["project_id"]
+        dataset_name = parameters["dataset_name"]
+        table_name = parameters["table_name"]
+    publish_dict["project_id"] = project_id
+    publish_dict["report_name"] = parameters["report_name"]
+    publish_dict["description"] = parameters["description"]
+    publish_dict["publisher"] = parameters["publisher"]
+    publish_dict["report_details"] = {}
+    publish_dict["report_details"]["dataset_name"] = dataset_name
+    publish_dict["report_details"]["table_name"] = table_name
+    publish_dict["report_details"]["process_date"] = parameters["process_date"]
+    publish_dict["report_details"]["test_passed"] = parameters["test_passed"]
+    if "additional_report_details" in parameters:
+        for key, value in parameters["additional_report_details"].items():
+            publish_dict["report_details"][key] = value
+    return publish_report_to_dhp_v2(publish_dict)
+
+
 def certify_asset(parameters):
     '''
     This function takes in a dict to certify an asset in DHP.

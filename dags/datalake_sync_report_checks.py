@@ -12,7 +12,7 @@ from airflow.operators.python import get_current_context
 
 from pkg.tasks.sync_report_checks import *
 
-job_name = "check_unavailable_snapshot_name"
+job_name = "daily_activities"
 process_date = "2026-02-20"  # needs to be fetched from x
 
 
