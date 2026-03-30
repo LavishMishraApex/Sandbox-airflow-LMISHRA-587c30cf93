@@ -144,15 +144,22 @@ def run_tests_for_asset(full_asset_name: str, sync_report_array: str, job_name: 
         if error:
             errors_in_dbt_test[test_name] = error
             dhp_parameters["test_passed"] = False
+            logging.error(
+                f"Test {test_name} failed for asset {full_asset_name} with error: {error['text']}, publishing test failures results to DHP")
         else:
             dhp_parameters["test_passed"] = True
+            logging.info(
+                f"Test {test_name} passed for asset {full_asset_name}, publishing test success results to DHP")
         dhp_parameters["full_table_name"] = full_asset_name
         dhp_parameters["report_name"] = test_name
         dhp_parameters["description"] = f"Sync Report check for {test_name} for asset {full_asset_name}"
         dhp_parameters["publisher"] = "datalake@apexclearing.com"
         dhp_parameters["process_date"] = process_date
+        logging.info(
+            f"::group::Publishing results to DHP details")
         is_dhp_publish_success, response_json = post_report_to_dhp(
             dhp_parameters)
+        logging.info(f"::endgroup::")
         if not is_dhp_publish_success:
             logging.error(
                 f"Failed to publish test result to DHP for test {test_name} on asset {full_asset_name}. Response: {response_json}")
